@@ -28,8 +28,8 @@ reader = easyocr.Reader(['en'], gpu=True)
 # NER model
 print("Loading NER model...")
 # model_name = "dslim/bert-large-NER" # 334M parameters
-# model_name = "dslim/distilbert-NER" # 65.2M parameters
-model_name = "dslim/bert-base-NER" # 108M parameters
+model_name = "dslim/distilbert-NER" # 65.2M parameters
+# model_name = "dslim/bert-base-NER" # 108M parameters
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForTokenClassification.from_pretrained(model_name)
