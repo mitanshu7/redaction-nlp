@@ -5,7 +5,8 @@
 
 import cv2 # OpenCV, to read and manipulate images
 import numpy as np # Numpy, for numerical operations
-import easyocr # EasyOCR, for OCR
+import pytesseract # PyTesseract, for OCR
+from pytesseract import Output 
 from pdf2image import convert_from_path # pdf2image, to convert PDF to images
 import img2pdf # img2pdf, to convert images to PDF
 import torch # PyTorch, for deep learning   
@@ -17,20 +18,21 @@ from glob import glob # Glob, to get file paths
 
 
 
+
 ##########################################################################################################
 
-# Load the model
+# Set the parameters
+# For tessaract to use all cores
+os.environ['OMP_THREAD_LIMIT'] = str(mp.cpu_count())
 
-# OCR model
-print("Loading OCR model...")
-reader = easyocr.Reader(['en'], gpu=True)
+# Load the model
 
 # NER model
 print("Loading NER model...")
 # model_name = "dslim/bert-large-NER" # 334M parameters
 # model_name = "dslim/distilbert-NER" # 65.2M parameters
-# model_name = "dslim/bert-base-NER" # 108M parameters
-model_name = "Clinical-AI-Apollo/Medical-NER" # 184M parameters
+model_name = "dslim/bert-base-NER" # 108M parameters
+# model_name = "Clinical-AI-Apollo/Medical-NER" # 184M parameters
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForTokenClassification.from_pretrained(model_name)
@@ -47,7 +49,7 @@ nlp = pipeline("ner", model=model, tokenizer=tokenizer, device=0)
 img_format = 'ppm'
 
 # DPI
-dpi = 148
+dpi = 150
 
 # Redaction score threshold
 redaction_score_threshold = 0.0
@@ -82,42 +84,44 @@ def redact_image(pdf_image_path):
     cv_image = cv2.imread(pdf_image_path)
 
     # Read the text from the image
-    result = reader.readtext(cv_image, height_ths=0, width_ths=0, x_ths=0, y_ths=0)
-
+    result = pytesseract.image_to_data(cv_image, output_type=Output.DICT)
+    print("OCR results len:", len(result['text']))
+    
     # Get the text from the result
-    text = ' '.join([text for (bbox, text, prob) in result])
+    text = ' '.join([tmp_text for tmp_text in result['text']])
 
     # Perform NER on the text
     ner_results = nlp(text)
+    print("NER results len:", len(ner_results))
 
-    # Draw bounding boxes
-    for ((bbox, text, prob),ner_result) in zip(result, ner_results):
+    # Draw bounding boxes over recognized text (words)
+    for i, (word, ner_result) in enumerate(zip(result['text'], ner_results)):
 
         # Get the coordinates of the bounding box
-        (top_left, top_right, bottom_right, bottom_left) = bbox
-        top_left = tuple(map(int, top_left))
-        bottom_right = tuple(map(int, bottom_right))
+        (x, y, w, h) = (result['left'][i], result['top'][i], result['width'][i], result['height'][i])
+        top_left = (x, y)
+        bottom_right = (x + w, y + h)
+        center_top = (x, y - 10)
+        center_bottom = (x, y + h + 10)
 
-        # Calculate the centers of the top and bottom of the bounding box
-        # center_top = (int((top_left[0] + top_right[0]) / 2), int((top_left[1] + top_right[1]) / 2))
-        # center_bottom = (int((bottom_left[0] + bottom_right[0]) / 2), int((bottom_left[1] + bottom_right[1]) / 2))
-
-
-        # If the NER result is not empty, and the score is high
-        if len(ner_result) > 0 and ner_result['score'] > redaction_score_threshold:
+        # If the NER result is not empty, and the score is higher than the threshold
+        if len(ner_result) > 0 and ner_result['score'] > redaction_score_threshold and result['level'][i] == 5:
 
             # Get the entity and score
             # entity = ner_result[0]['entity']
             # score = str(ner_result[0]['score'])
 
             # Apply a irreversible redaction
-            cv2.rectangle(cv_image, top_left, bottom_right, (0, 0, 0), -1)
+            # cv2.rectangle(cv_image, top_left, bottom_right, (0, 0, 0), -1)
+            pass
         # else:
             # entity = 'O'
             # score = '0'
             
         # # Draw the bounding box
-        # cv2.rectangle(cv_image, top_left, bottom_right, (0, 255, 0), 1)
+        cv2.rectangle(cv_image, top_left, bottom_right, (0, 255, 0), 1)
+        cv2.putText(cv_image, word, center_top, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        cv2.putText(cv_image, str(result['conf'][i]), center_bottom, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
         # # Draw the entity and score
         # cv2.putText(cv_image, entity, center_top, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         # cv2.putText(cv_image, score, center_bottom, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
@@ -172,7 +176,7 @@ if __name__ == '__main__':
     input_pdf_name = input_pdf_path.split('.')[-2]
 
     # Get the number of processes
-    num_processes = 2
+    num_processes = 5
 
     # Start the timer
     start_time = time()
@@ -186,8 +190,8 @@ if __name__ == '__main__':
 
 
     # Redact the sensitive information in parallel
-    mp.set_start_method('spawn')
-    # mp.set_start_method('forkserver')
+    # mp.set_start_method('spawn')
+    mp.set_start_method('forkserver')
     with mp.Pool(num_processes) as pool:
         redacted_image_files = pool.map(redact_image, pdf_images)
 
