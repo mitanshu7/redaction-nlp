@@ -23,7 +23,7 @@ from glob import glob # Glob, to get file paths
 
 # Set the parameters
 # For tessaract to use all cores
-os.environ['OMP_THREAD_LIMIT'] = str(mp.cpu_count())
+# os.environ['OMP_THREAD_LIMIT'] = str(mp.cpu_count())
 
 # Load the model
 
@@ -31,8 +31,8 @@ os.environ['OMP_THREAD_LIMIT'] = str(mp.cpu_count())
 print("Loading NER model...")
 # model_name = "dslim/bert-large-NER" # 334M parameters
 # model_name = "dslim/distilbert-NER" # 65.2M parameters
-model_name = "dslim/bert-base-NER" # 108M parameters
-# model_name = "Clinical-AI-Apollo/Medical-NER" # 184M parameters
+# model_name = "dslim/bert-base-NER" # 108M parameters
+model_name = "Clinical-AI-Apollo/Medical-NER" # 184M parameters
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForTokenClassification.from_pretrained(model_name)
@@ -49,7 +49,7 @@ nlp = pipeline("ner", model=model, tokenizer=tokenizer, device=0)
 img_format = 'ppm'
 
 # DPI
-dpi = 150
+dpi = 300
 
 # Redaction score threshold
 redaction_score_threshold = 0.0
@@ -99,6 +99,7 @@ def ocr_image(image_path):
 
     # Perform OCR on the image
     ocr_result = pytesseract.image_to_data(cv_image, output_type=Output.DICT)
+    print(f"Length of OCR results: {len(ocr_result['text'])}")
 
     return ocr_result
 
@@ -118,6 +119,7 @@ def ner_text(ocr_results):
 
     # Perform NER on the text
     ner_results = nlp(text)
+    print("Length of NER results: ", len(ner_results))
 
     return ner_results
 
@@ -152,19 +154,20 @@ def redact_image(pdf_image_path):
             # score = str(ner_result[0]['score'])
 
             # Apply a irreversible redaction
-            # cv2.rectangle(cv_image, top_left, bottom_right, (0, 0, 0), -1)
-            pass
+            cv2.rectangle(cv_image, top_left, bottom_right, (0, 0, 0), -1)
+            # pass
         # else:
             # entity = 'O'
             # score = '0'
             
-        # # Draw the bounding box
-        cv2.rectangle(cv_image, top_left, bottom_right, (0, 255, 0), 1)
-        cv2.putText(cv_image, word, center_top, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        cv2.putText(cv_image, str(result['conf'][i]), center_bottom, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-        # # Draw the entity and score
-        # cv2.putText(cv_image, entity, center_top, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        # cv2.putText(cv_image, score, center_bottom, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        # # Draw the bounding box and text
+        # cv2.rectangle(cv_image, top_left, bottom_right, (0, 255, 0), 1)
+        # cv2.putText(cv_image, word, center_top, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        # cv2.putText(cv_image, str(result['conf'][i]), center_bottom, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+        # cv2.putText(cv_image, ner_result['entity'], center_bottom, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+        # cv2.putText(cv_image, ner_result['score'], center_bottom, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+       
 
     # Save the redacted image
     print(f"Saving redacted {pdf_image_path}...")
@@ -216,7 +219,7 @@ if __name__ == '__main__':
     input_pdf_name = input_pdf_path.split('.')[-2]
 
     # Get the number of processes
-    num_processes = 2
+    num_processes = 5
 
     # Start the timer
     start_time = time()
