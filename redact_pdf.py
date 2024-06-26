@@ -28,8 +28,9 @@ reader = easyocr.Reader(['en'], gpu=True)
 # NER model
 print("Loading NER model...")
 # model_name = "dslim/bert-large-NER" # 334M parameters
-model_name = "dslim/distilbert-NER" # 65.2M parameters
+# model_name = "dslim/distilbert-NER" # 65.2M parameters
 # model_name = "dslim/bert-base-NER" # 108M parameters
+model_name = "Clinical-AI-Apollo/Medical-NER" # 184M parameters
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForTokenClassification.from_pretrained(model_name)
@@ -40,6 +41,16 @@ model.to(device)
 
 # Create a pipeline for NER
 nlp = pipeline("ner", model=model, tokenizer=tokenizer, device=0)
+
+# Image ocr options:
+# Image format
+img_format = 'ppm'
+
+# DPI
+dpi = 148
+
+# Redaction score threshold
+redaction_score_threshold = 0.0
 
 ##########################################################################################################
 ## Functions
@@ -52,7 +63,7 @@ def convert_to_images(pdf_file_path):
 
     # Convert the PDF to images
     print("Converting PDF to images...")
-    convert_from_path(pdf_file_path, dpi=300, thread_count=mp.cpu_count(), output_folder=pdf_images_dir)
+    convert_from_path(pdf_file_path, dpi=dpi, thread_count=mp.cpu_count(), output_folder=pdf_images_dir, fmt=img_format)
 
     # Fix the file names
     for file in os.listdir(pdf_images_dir):
@@ -93,7 +104,7 @@ def redact_image(pdf_image_path):
 
 
         # If the NER result is not empty, and the score is high
-        if len(ner_result) > 0 and ner_result['score'] > 0.9:
+        if len(ner_result) > 0 and ner_result['score'] > redaction_score_threshold:
 
             # Get the entity and score
             # entity = ner_result[0]['entity']
@@ -113,7 +124,7 @@ def redact_image(pdf_image_path):
 
     # Save the redacted image
     print(f"Saving redacted {pdf_image_path}...")
-    redacted_image_path = pdf_image_path.replace('.ppm', '_redacted.png')
+    redacted_image_path = pdf_image_path.replace(f'.{img_format}', f'_redacted.{img_format}')
     # Save the redacted image in png format
     cv2.imwrite(redacted_image_path, cv_image)
 
@@ -157,8 +168,11 @@ def cleanup(redacted_image_files, pdf_images, pdf_images_dir):
 if __name__ == '__main__':
 
     # Get the input PDF file
-    input_pdf_path = 'sample.pdf'
+    input_pdf_path = 'sample3.pdf'
     input_pdf_name = input_pdf_path.split('.')[-2]
+
+    # Get the number of processes
+    num_processes = 2
 
     # Start the timer
     start_time = time()
@@ -167,13 +181,14 @@ if __name__ == '__main__':
     pdf_images_dir = convert_to_images(input_pdf_path)
 
     # Get the file paths of the images
-    pdf_images = glob(f'{pdf_images_dir}/*.ppm', recursive=True)
-    # pdf_images.sort()
+    pdf_images = glob(f'{pdf_images_dir}/*.{img_format}', recursive=True)
+    pdf_images.sort()
 
 
     # Redact the sensitive information in parallel
-    mp.set_start_method('forkserver')
-    with mp.Pool(2) as pool:
+    mp.set_start_method('spawn')
+    # mp.set_start_method('forkserver')
+    with mp.Pool(num_processes) as pool:
         redacted_image_files = pool.map(redact_image, pdf_images)
 
     # Convert the redacted images to a single PDF
