@@ -58,6 +58,15 @@ redaction_score_threshold = 0.0
 ## Functions
 
 def convert_to_images(pdf_file_path):
+    """
+    This function converts a PDF file to images.
+    
+    Args:
+    pdf_file_path (str): The path to the PDF file.
+
+    Returns:
+    pdf_images_dir (str): The directory with the images.
+    """
 
     # Create a directory to store pdf images
     pdf_images_dir = f'{pdf_file_path}_images'
@@ -74,25 +83,56 @@ def convert_to_images(pdf_file_path):
     # Return the directory with the images
     return pdf_images_dir
 
-def redact_image(pdf_image_path):
+def ocr_image(image_path):
+    """
+    This function performs OCR on an image.
 
-    # Loop through the images
-    print("Redacting sensitive information...")
+    Args:
+    image_path (str): The path to the image.
 
-    print(f"Processing {pdf_image_path}...")
+    Returns:
+    ocr_result (dict): The OCR results.
+    """
+
     # Read the image
-    cv_image = cv2.imread(pdf_image_path)
+    cv_image = cv2.imread(image_path)
 
-    # Read the text from the image
-    result = pytesseract.image_to_data(cv_image, output_type=Output.DICT)
-    print("OCR results len:", len(result['text']))
-    
-    # Get the text from the result
-    text = ' '.join([tmp_text for tmp_text in result['text']])
+    # Perform OCR on the image
+    ocr_result = pytesseract.image_to_data(cv_image, output_type=Output.DICT)
+
+    return ocr_result
+
+def ner_text(ocr_results):
+    """
+    This function performs NER on the text.
+
+    Args:
+    ocr_results (dict): The OCR results.
+
+    Returns:
+    ner_results (list): The NER results.
+    """
+
+    # Get the text from the OCR results
+    text = ' '.join([tmp_text for tmp_text in ocr_results['text']])
 
     # Perform NER on the text
     ner_results = nlp(text)
-    print("NER results len:", len(ner_results))
+
+    return ner_results
+
+
+def redact_image(pdf_image_path):
+
+    # Read the image
+    cv_image = cv2.imread(pdf_image_path)
+
+    # Perform OCR on the image
+    result = ocr_image(pdf_image_path)
+
+    # Perform NER on the text
+    ner_results = ner_text(result)
+
 
     # Draw bounding boxes over recognized text (words)
     for i, (word, ner_result) in enumerate(zip(result['text'], ner_results)):
@@ -176,7 +216,7 @@ if __name__ == '__main__':
     input_pdf_name = input_pdf_path.split('.')[-2]
 
     # Get the number of processes
-    num_processes = 5
+    num_processes = 2
 
     # Start the timer
     start_time = time()
