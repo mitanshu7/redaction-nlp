@@ -1,17 +1,30 @@
-idea:
+# Redaction-NLP
 
-Using nlp = 
+## Overview
 
-ON images - 
+Redaction-NLP is a Python-based project designed to redact Personally Identifiable Information (PII) from various text sources using Natural Language Processing (NLP). The project employs OCR to extract text from images and Named Entity Recognition (NER) models to identify PII. It offers these primary functionalities:
 
-generate a dataset of images with text
-use ocr to identify text and bbox
-use Named entity recognition model to identify pii
-gaussian blur on boxes identified as pii
-output same image but with pii masked
+1. **PDF Redaction**:
+   - Convert a PDF to images for OCR
+   - Use OCR to identify text and bounding boxes.
+   - Apply mask on boxes identified as PII using Named-Entity-Recognition Model.
+   - Output the same PDF with PII masked.
 
-ON normal text -
-generate a dataset of pdfs, the most common form of forms, extract text and location
-use Named entity recognition model to identify pii 
-mask with X replacing words containing pii 
-output same pdf but only with pii masked
+
+## Features
+
+- **OCR Integration**: Extracts text from images.
+- **NER Models**: Identifies PII in text and images.
+- **Redaction Techniques**: Masks PII in images and text.
+- **PDF Handling**: Processes and redacts text in PDFs.
+
+## Usage
+
+This project can be useful for organizations needing to ensure privacy by redacting sensitive information from documents and images before sharing or publishing.
+
+## Technologies Used
+
+- Python
+- OCR for text extraction (EasyOCR in Main, Tesseract in another branch)
+- Named Entity Recognition for PII identification with models from huggingface.
+- PDF and image processing libraries.
