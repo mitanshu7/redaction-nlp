@@ -4,17 +4,17 @@
 # Import the required libraries
 
 import cv2 # OpenCV, to read and manipulate images
-import numpy as np # Numpy, for numerical operations
-import pytesseract # PyTesseract, for OCR
-from pytesseract import Output 
+import pytesseract as pt # PyTesseract, for OCR
 from pdf2image import convert_from_path # pdf2image, to convert PDF to images
 import img2pdf # img2pdf, to convert images to PDF
 import torch # PyTorch, for deep learning   
+from torch import multiprocessing as mpt # Torch Multiprocessing, to speed up the process
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline # Hugging Face Transformers, for NER
 import os # OS, for file operations
 import multiprocessing as mp # Multiprocessing, to speed up the process
 from time import time # Time, to measure the time taken
 from glob import glob # Glob, to get file paths
+import copy # Copy, to copy objects
 
 
 
@@ -25,24 +25,7 @@ from glob import glob # Glob, to get file paths
 # For tessaract to use all cores
 # os.environ['OMP_THREAD_LIMIT'] = str(mp.cpu_count())
 
-# Load the model
 
-# NER model
-print("Loading NER model...")
-# model_name = "dslim/bert-large-NER" # 334M parameters
-# model_name = "dslim/distilbert-NER" # 65.2M parameters
-# model_name = "dslim/bert-base-NER" # 108M parameters
-model_name = "Clinical-AI-Apollo/Medical-NER" # 184M parameters
-
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForTokenClassification.from_pretrained(model_name)
-
-# Move the model to the GPU for speed
-device = torch.device("cuda")
-model.to(device)
-
-# Create a pipeline for NER
-nlp = pipeline("ner", model=model, tokenizer=tokenizer, device=0)
 
 # Image ocr options:
 # Image format
@@ -69,11 +52,11 @@ def convert_to_images(pdf_file_path):
     """
 
     # Create a directory to store pdf images
-    pdf_images_dir = f'{pdf_file_path}_images'
+    pdf_file_name = os.path.basename(pdf_file_path).split('.')[0]
+    pdf_images_dir = f'{pdf_file_name}_images'
     os.makedirs(pdf_images_dir, exist_ok=True)
 
     # Convert the PDF to images
-    print("Converting PDF to images...")
     convert_from_path(pdf_file_path, dpi=dpi, thread_count=mp.cpu_count(), output_folder=pdf_images_dir, fmt=img_format)
 
     # Fix the file names
@@ -91,19 +74,25 @@ def ocr_image(image_path):
     image_path (str): The path to the image.
 
     Returns:
-    ocr_result (dict): The OCR results.
+    image_ocr_result (dict): The OCR results as value to the image path as key.
     """
+
+    # Dictionary to store the OCR results wrt the image
+    image_ocr_result = {}
 
     # Read the image
     cv_image = cv2.imread(image_path)
 
     # Perform OCR on the image
-    ocr_result = pytesseract.image_to_data(cv_image, output_type=Output.DICT)
-    print(f"Length of OCR results: {len(ocr_result['text'])}")
+    ocr_result = pt.image_to_data(cv_image, output_type=pt.Output.DICT)
 
-    return ocr_result
+    # Store the OCR results
+    image_ocr_result[f'{image_path}'] = ocr_result  
 
-def ner_text(ocr_results):
+    # Return the OCR results
+    return image_ocr_result
+
+def ner_text(image_ocr_result):
     """
     This function performs NER on the text.
 
@@ -111,43 +100,75 @@ def ner_text(ocr_results):
     ocr_results (dict): The OCR results.
 
     Returns:
-    ner_results (list): The NER results.
+    image_ocr_ner_result (dict): The NER and OCR results as value to the image path as key.
+    
     """
 
+    # Load the model
+
+    # NER model
+    # model_name = "dslim/bert-large-NER" # 334M parameters
+    # model_name = "dslim/distilbert-NER" # 65.2M parameters
+    # model_name = "dslim/bert-base-NER" # 108M parameters
+    model_name = "Clinical-AI-Apollo/Medical-NER" # 184M parameters
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForTokenClassification.from_pretrained(model_name)
+
+    # Move the model to the GPU for speed
+    device = torch.device("cuda")
+    model.to(device)
+
+    # Create a pipeline for NER
+    nlp = pipeline("ner", model=model, tokenizer=tokenizer, device=0)
+
+    # Dictionary to store the NER and OCR results wrt the image
+    image_ocr_ner_result = copy.deepcopy(image_ocr_result)
+
+
+    # Get key from the OCR results dictionary
+    image_path = list(image_ocr_ner_result.keys())[0]
+
     # Get the text from the OCR results
-    text = ' '.join([tmp_text for tmp_text in ocr_results['text']])
+    text = ' '.join([tmp_text for tmp_text in image_ocr_ner_result[image_path]['text']])
 
     # Perform NER on the text
-    ner_results = nlp(text)
-    print("Length of NER results: ", len(ner_results))
+    ner_result = nlp(text)
 
-    return ner_results
+    # Store the NER results in the OCR results dictionary
+    image_ocr_ner_result[image_path]['ner'] = ner_result
+
+    # Return the NER results along with the OCR results
+    return image_ocr_ner_result
 
 
-def redact_image(pdf_image_path):
+def redact_image(image_ocr_ner_result):
+
+    # Get the image path
+    pdf_image_path = list(image_ocr_ner_result.keys())[0]
 
     # Read the image
     cv_image = cv2.imread(pdf_image_path)
 
-    # Perform OCR on the image
-    result = ocr_image(pdf_image_path)
+    # Get the OCR results
+    ocr_result = image_ocr_ner_result[pdf_image_path]
 
-    # Perform NER on the text
-    ner_results = ner_text(result)
+    # Get the NER results
+    ner_result_list = ocr_result['ner']
 
 
     # Draw bounding boxes over recognized text (words)
-    for i, (word, ner_result) in enumerate(zip(result['text'], ner_results)):
+    for i, (word, ner_result) in enumerate(zip(ocr_result['text'], ner_result_list)):
 
         # Get the coordinates of the bounding box
-        (x, y, w, h) = (result['left'][i], result['top'][i], result['width'][i], result['height'][i])
+        (x, y, w, h) = (ocr_result['left'][i], ocr_result['top'][i], ocr_result['width'][i], ocr_result['height'][i])
         top_left = (x, y)
         bottom_right = (x + w, y + h)
         center_top = (x, y - 10)
         center_bottom = (x, y + h + 10)
 
         # If the NER result is not empty, and the score is higher than the threshold
-        if len(ner_result) > 0 and ner_result['score'] > redaction_score_threshold and result['level'][i] == 5:
+        if (len(ner_result) > 0) and (ner_result['score'] > redaction_score_threshold) and (ocr_result['level'][i] == 5):
 
             # Get the entity and score
             # entity = ner_result[0]['entity']
@@ -214,29 +235,45 @@ def cleanup(redacted_image_files, pdf_images, pdf_images_dir):
 
 if __name__ == '__main__':
 
-    # Get the input PDF file
-    input_pdf_path = 'sample3.pdf'
-    input_pdf_name = input_pdf_path.split('.')[-2]
-
-    # Get the number of processes
-    num_processes = 5
-
     # Start the timer
     start_time = time()
 
-    # Convert the PDF to images
+    # Set the Multiprocessing start method
+    mp.set_start_method('forkserver')
+
+    # Set the number of processes for gpu
+    num_gpu_processes = 5
+
+    # Set the number of processes for cpu
+    num_cpu_processes = mp.cpu_count()
+
+    # Get the input PDF file
+    input_pdf_path = 'sample3.pdf'
+    input_pdf_name = os.path.basename(input_pdf_path).split('.')[0]
+    print(f"Input PDF: {input_pdf_path}")
+
+    # Convert PDF to images
+    print("Converting PDF to images...")
     pdf_images_dir = convert_to_images(input_pdf_path)
 
-    # Get the file paths of the images
+    # Do OCR on the images 
+    print("Performing OCR on the images...")
+
+    # Get the image files
     pdf_images = glob(f'{pdf_images_dir}/*.{img_format}', recursive=True)
     pdf_images.sort()
+    
+    # Perform OCR in parallel (CPU)
+    with mp.Pool(num_cpu_processes) as pool:
+        image_ocr_results = pool.map(ocr_image, pdf_images)
 
-
-    # Redact the sensitive information in parallel
-    # mp.set_start_method('spawn')
-    mp.set_start_method('forkserver')
-    with mp.Pool(num_processes) as pool:
-        redacted_image_files = pool.map(redact_image, pdf_images)
+    # Perform NER in parallel (GPU)
+    with mpt.Pool(num_gpu_processes) as pool:
+        image_ocr_ner_results = pool.map(ner_text, image_ocr_results)
+    
+    # Perform Redaction in parallel (CPU)
+    with mp.Pool(num_cpu_processes) as pool:
+        redacted_image_files = pool.map(redact_image, image_ocr_ner_results)
 
     # Convert the redacted images to a single PDF
     redacted_pdf_path = stich_images_to_pdf(redacted_image_files, input_pdf_name)
