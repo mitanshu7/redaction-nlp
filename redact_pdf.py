@@ -241,8 +241,11 @@ if __name__ == '__main__':
     # Set the Multiprocessing start method
     mp.set_start_method('forkserver')
 
-    # Set the number of processes for gpu
-    num_gpu_processes = 5
+    # Set the number of processes for 6 GB VRAM gpu
+    num_gpu_processes = 6 # Model "Clinical-AI-Apollo/Medical-NER"
+    # num_gpu_processes = 4 # Model "dslim/bert-large-NER"
+    # num_gpu_processes = 12 # Model "dslim/distilbert-NER"
+    # num_gpu_processes = 8 # Model "dslim/bert-base-NER"
 
     # Set the number of processes for cpu
     num_cpu_processes = mp.cpu_count()
